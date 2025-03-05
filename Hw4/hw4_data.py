@@ -3,10 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
 
-# Load the data
 df = pd.read_csv('hw4_data.csv')
 
-# Extract columns into NumPy arrays
 model_output = df['model_output'].to_numpy()
 true_class = df['true_class'].to_numpy()
 y_pred = df['prediction'].to_numpy()
@@ -27,8 +25,8 @@ print(f"True Negatives (TN): {TN}")
 print(f"False Negatives (FN): {FN}")
 
 #2 Find the precision and recall.
-precision = TP / (TP + FP) if (TP + FP) > 0 else 0
-recall = TP / (TP + FN) if (TP + FN) > 0 else 0
+precision = TP / (TP + FP)
+recall = TP / (TP + FN)
 print(f"Precision: {precision:.4f}")
 print(f"Recall: {recall:.4f}")
 

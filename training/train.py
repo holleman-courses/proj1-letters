@@ -13,7 +13,7 @@ for category in os.listdir(data_dir):
     print(f"{category} contains {len(os.listdir(path))} images.")
 
 # Image size for resizing
-IMG_SIZE = (224, 224)
+IMG_SIZE = (32, 32)
 BATCH_SIZE = 8
 
 train_datagen = ImageDataGenerator(
@@ -48,14 +48,16 @@ val_data = train_datagen.flow_from_directory(
 
 # Build CNN model
 model = models.Sequential([
-    layers.Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=(224, 224, 3)),
+    layers.Conv2D(16, (3, 3), activation='relu', padding='same', input_shape=(32, 32, 3)),
     layers.MaxPooling2D((2, 2)),
-    layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
+    
+    layers.Conv2D(32, (3, 3), activation='relu', padding='same'),
     layers.MaxPooling2D((2, 2)),
-    layers.Conv2D(128, (3, 3), activation='relu', padding='same'),  # Extra layer for better feature extraction
-    layers.MaxPooling2D((2, 2)),
-    layers.Flatten(),
-    layers.Dense(128, activation='relu'),
+
+    layers.GlobalAveragePooling2D(),  # Replaces Flatten() for lower parameter count
+
+    layers.Dense(64, activation='relu'),
+    layers.Dropout(0.3),  # Regularization to prevent overfitting
     layers.Dense(1, activation='sigmoid')
 ])
 
@@ -78,7 +80,7 @@ history = model.fit(
 
 # Save final model
 model.save('trained_model.h5')
-print("Model trained and saved as 'trained_model.h5'.")
+print("Model saved as 'trained_model.h5'.")
 
 # Model summary
 model.summary()
@@ -89,3 +91,29 @@ val_accuracy = history.history['val_accuracy'][-1]
 
 print(f"Training Accuracy: {train_accuracy * 100:.2f}%")
 print(f"Validation Accuracy: {val_accuracy * 100:.2f}%")
+
+
+import matplotlib.pyplot as plt
+
+# Plot training & validation loss
+plt.figure(figsize=(10, 4))
+
+plt.subplot(1, 2, 1)
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.title('Training vs Validation Loss')
+plt.legend()
+
+# Plot training & validation accuracy
+plt.subplot(1, 2, 2)
+plt.plot(history.history['accuracy'], label='Training Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.title('Training vs Validation Accuracy')
+plt.legend()
+
+plt.tight_layout()
+plt.show()

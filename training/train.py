@@ -4,15 +4,14 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras import layers, models
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
-
-data_dir = "Dataset"
+data_dir = "dataset"
 print("Classes found:", os.listdir(data_dir))
 
 for category in os.listdir(data_dir):
     path = os.path.join(data_dir, category)
     print(f"{category} contains {len(os.listdir(path))} images.")
 
-# Image size for resizing
+#Image size for resizing
 IMG_SIZE = (32, 32)
 BATCH_SIZE = 8
 
@@ -27,7 +26,7 @@ train_datagen = ImageDataGenerator(
     horizontal_flip=True
 )
 
-# Load data
+#Load data
 train_data = train_datagen.flow_from_directory(
     data_dir,
     target_size=IMG_SIZE,
@@ -46,7 +45,7 @@ val_data = train_datagen.flow_from_directory(
     subset='validation'
 )
 
-# Build CNN model
+#CNN model
 model = models.Sequential([
     layers.Conv2D(16, (3, 3), activation='relu', padding='same', input_shape=(32, 32, 3)),
     layers.MaxPooling2D((2, 2)),
@@ -65,8 +64,8 @@ model = models.Sequential([
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
 # Callbacks: Early stopping & checkpointing
-checkpoint = ModelCheckpoint('best_model.h5', save_best_only=True, monitor='val_loss', mode='min')
-early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+#checkpoint = ModelCheckpoint('best_model.h5', save_best_only=True, monitor='val_loss', mode='min')
+#early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
 
 # Train the model
 history = model.fit(
@@ -75,45 +74,9 @@ history = model.fit(
     epochs=10,
     validation_data=val_data,
     validation_steps=len(val_data),
-    callbacks=[checkpoint, early_stopping]
+    #callbacks=[checkpoint, early_stopping]
 )
 
-# Save final model
 model.save('trained_model.h5')
 print("Model saved as 'trained_model.h5'.")
-
-# Model summary
 model.summary()
-
-# Print training and validation accuracy
-train_accuracy = history.history['accuracy'][-1]
-val_accuracy = history.history['val_accuracy'][-1]
-
-print(f"Training Accuracy: {train_accuracy * 100:.2f}%")
-print(f"Validation Accuracy: {val_accuracy * 100:.2f}%")
-
-
-import matplotlib.pyplot as plt
-
-# Plot training & validation loss
-plt.figure(figsize=(10, 4))
-
-plt.subplot(1, 2, 1)
-plt.plot(history.history['loss'], label='Training Loss')
-plt.plot(history.history['val_loss'], label='Validation Loss')
-plt.xlabel('Epochs')
-plt.ylabel('Loss')
-plt.title('Training vs Validation Loss')
-plt.legend()
-
-# Plot training & validation accuracy
-plt.subplot(1, 2, 2)
-plt.plot(history.history['accuracy'], label='Training Accuracy')
-plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
-plt.xlabel('Epochs')
-plt.ylabel('Accuracy')
-plt.title('Training vs Validation Accuracy')
-plt.legend()
-
-plt.tight_layout()
-plt.show()

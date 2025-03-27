@@ -1,66 +1,106 @@
-/* Copyright 2019 The TensorFlow Authors. All Rights Reserved.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-Dresden, Germanydresden
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-==============================================================================*/
-
 #include <TensorFlowLite.h>
 #include <Arduino.h>
+#include <Arduino_OV767X_TinyMLx.h>
 #include "mug_model.h"
-
-'''
 #include "main_functions.h"
 #include "detection_responder.h"
 #include "image_provider.h"
 #include "model_settings.h"
-#include "person_detect_model_data.h"
-'''
-
 #include "tensorflow/lite/micro/micro_error_reporter.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 #include "tensorflow/lite/version.h"
 
-// Globals, used for compatibility with Arduino-style sketches.
 namespace {
 tflite::ErrorReporter* error_reporter = nullptr;
 const tflite::Model* model = nullptr;
 tflite::MicroInterpreter* interpreter = nullptr;
 TfLiteTensor* input = nullptr;
+bool is_initialized;
 
-// In order to use optimized tensorflow lite kernels, a signed int8_t quantized
-// model is preferred over the legacy unsigned model format. This means that
-// throughout this project, input images must be converted from unisgned to
-// signed format. The easiest and quickest way to convert from unsigned to
-// signed 8-bit integers is to subtract 128 from the unsigned value to get a
-// signed value.
-
-// An area of memory to use for input, output, and intermediate arrays.
-constexpr int kTensorArenaSize = 136 * 1024;
+constexpr int kTensorArenaSize = 100 * 1024;
 static uint8_t tensor_arena[kTensorArenaSize];
-}  // namespace
+}
 
-// The name of this function is important for Arduino compatibility.
+//GetImage function
+TfLiteStatus GetImage(tflite::ErrorReporter* error_reporter, int image_width,
+  int image_height, int channels, int8_t* image_data) {
+
+byte data[176 * 144]; // Receiving QCIF grayscale from camera = 176 * 144 * 1
+
+static bool g_is_camera_initialized = false;
+static bool serial_is_initialized = false;
+
+// Initialize camera if necessary
+if (!g_is_camera_initialized) {
+if (!Camera.begin(QCIF, GRAYSCALE, 5, OV7675)) {
+TF_LITE_REPORT_ERROR(error_reporter, "Failed to initialize camera!");
+return kTfLiteError;
+}
+g_is_camera_initialized = true;
+}
+
+// Read camera data
+Camera.readFrame(data);
+
+int min_x = (176 - 96) / 2;
+int min_y = (144 - 96) / 2;
+int index = 0;
+
+// Crop 96x96 image. This lowers FOV, ideally we should downsample
+for (int y = min_y; y < min_y + 96; y++) {
+for (int x = min_x; x < min_x + 96; x++) {
+image_data[index++] = static_cast<int8_t>(data[(y * 176) + x] - 128); // convert TF input image to signed 8-bit
+}
+}
+return kTfLiteOk;
+}
+
+//RespondToDetection function
+void RespondToDetection(tflite::ErrorReporter* error_reporter,
+  int8_t person_score, int8_t no_person_score) {
+if (!is_initialized) {
+// Pins for the built-in RGB LEDs on the Arduino Nano 33 BLE Sense
+pinMode(LEDR, OUTPUT);
+pinMode(LEDG, OUTPUT);
+pinMode(LEDB, OUTPUT);
+is_initialized = true;
+}
+
+// Note: The RGB LEDs on the Arduino Nano 33 BLE
+// Sense are on when the pin is LOW, off when HIGH.
+
+// Switch the person/not person LEDs off
+digitalWrite(LEDG, HIGH);
+digitalWrite(LEDR, HIGH);
+digitalWrite(LEDB, HIGH);
+
+// Switch on the green LED when a person is detected,
+// the red when no person is detected
+if (person_score > no_person_score) {
+digitalWrite(LEDG, LOW);
+digitalWrite(LEDR, HIGH);
+} else {
+digitalWrite(LEDG, HIGH);
+digitalWrite(LEDR, LOW);
+}
+
+TF_LITE_REPORT_ERROR(error_reporter, "Person score: %d No person score: %d",
+ person_score, no_person_score);
+}
+
+
 void setup() {
-  // Set up logging. Google style is to avoid globals or statics because of
-  // lifetime uncertainty, but since this has a trivial destructor it's okay.
-  // NOLINTNEXTLINE(runtime-global-variables)
-  static tflite::MicroErrorReporter micro_error_reporter;
-  error_reporter = &micro_error_reporter;
+  Serial.begin(115200);
+  delay(5000);
+  Serial.println("Starting");
 
-  // Map the model into a usable data structure. This doesn't involve any
-  // copying or parsing, it's a very lightweight operation.
-  model = tflite::GetModel(g_person_detect_model_data);
+  static tflite::MicroErrorReporter micro_error_reporter;
+  tflite::ErrorReporter* error_reporter = &micro_error_reporter;
+
+  model = tflite::GetModel(mug_model_data);
+  
   if (model->version() != TFLITE_SCHEMA_VERSION) {
     TF_LITE_REPORT_ERROR(error_reporter,
                          "Model provided is schema version %d not equal "
@@ -69,14 +109,6 @@ void setup() {
     return;
   }
 
-  // Pull in only the operation implementations we need.
-  // This relies on a complete list of all the ops needed by this graph.
-  // An easier approach is to just use the AllOpsResolver, but this will
-  // incur some penalty in code space for op implementations that are not
-  // needed by this graph.
-  //
-  // tflite::AllOpsResolver resolver;
-  // NOLINTNEXTLINE(runtime-global-variables)
   static tflite::MicroMutableOpResolver<5> micro_op_resolver;
   micro_op_resolver.AddAveragePool2D();
   micro_op_resolver.AddConv2D();
@@ -84,39 +116,31 @@ void setup() {
   micro_op_resolver.AddReshape();
   micro_op_resolver.AddSoftmax();
 
-  // Build an interpreter to run the model with.
-  // NOLINTNEXTLINE(runtime-global-variables)
   static tflite::MicroInterpreter static_interpreter(
       model, micro_op_resolver, tensor_arena, kTensorArenaSize, error_reporter);
   interpreter = &static_interpreter;
 
-  // Allocate memory from the tensor_arena for the model's tensors.
   TfLiteStatus allocate_status = interpreter->AllocateTensors();
   if (allocate_status != kTfLiteOk) {
     TF_LITE_REPORT_ERROR(error_reporter, "AllocateTensors() failed");
     return;
   }
 
-  // Get information about the memory area to use for the model's input.
   input = interpreter->input(0);
 }
 
-// The name of this function is important for Arduino compatibility.
 void loop() {
-  // Get image from provider.
   if (kTfLiteOk != GetImage(error_reporter, kNumCols, kNumRows, kNumChannels,
                             input->data.int8)) {
     TF_LITE_REPORT_ERROR(error_reporter, "Image capture failed.");
   }
 
-  // Run the model on this input and make sure it succeeds.
   if (kTfLiteOk != interpreter->Invoke()) {
     TF_LITE_REPORT_ERROR(error_reporter, "Invoke failed.");
   }
 
   TfLiteTensor* output = interpreter->output(0);
 
-  // Process the inference results.
   int8_t person_score = output->data.uint8[kPersonIndex];
   int8_t no_person_score = output->data.uint8[kNotAPersonIndex];
   RespondToDetection(error_reporter, person_score, no_person_score);

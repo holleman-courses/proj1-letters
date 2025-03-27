@@ -14,13 +14,16 @@ limitations under the License.
 ==============================================================================*/
 
 #include <TensorFlowLite.h>
+#include <Arduino.h>
+#include "mug_model.h"
 
+'''
 #include "main_functions.h"
 #include "detection_responder.h"
 #include "image_provider.h"
 #include "model_settings.h"
 #include "person_detect_model_data.h"
-
+'''
 
 #include "tensorflow/lite/micro/micro_error_reporter.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
